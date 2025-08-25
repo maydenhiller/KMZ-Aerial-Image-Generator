@@ -1,13 +1,12 @@
 import streamlit as st
 import zipfile
 import xml.etree.ElementTree as ET
-import os
 import requests
 from PIL import Image
 from io import BytesIO
 
 # --- CONFIG ---
-API_KEY = "AIzaSyB9HxznAvlGb02e-K1rhld_CPeAm_wvPWU"
+API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
 ZOOM = 18
 IMG_SIZE = "800x800"
 MAPTYPE = "satellite"
@@ -43,7 +42,10 @@ def fetch_satellite_image(lat, lon, name):
         filename = f"{name.replace(' ', '_')}.jpg"
         img.save(filename)
         return filename
-    return None
+    else:
+        st.warning(f"Image fetch failed for {name}. Status code: {response.status_code}")
+        st.text(f"URL: {url}")
+        return None
 
 # --- STREAMLIT UI ---
 st.set_page_config(page_title="AGM Aerial Generator", layout="centered")
@@ -64,7 +66,5 @@ if uploaded_file:
             img_path = fetch_satellite_image(lat, lon, name)
             if img_path:
                 st.image(img_path, caption=name, use_column_width=True)
-            else:
-                st.warning(f"Image fetch failed for {name}.")
     else:
         st.error("❌ No valid AGM coordinates found in the KMZ.")
