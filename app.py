@@ -1,7 +1,6 @@
 import streamlit as st
-import simplekml
 from zipfile import ZipFile
-from io import BytesIO
+import xml.etree.ElementTree as ET
 import requests
 import os
 
@@ -15,17 +14,22 @@ os.makedirs(output_dir, exist_ok=True)
 def extract_agms(file):
     if file.name.endswith('.kmz'):
         with ZipFile(file) as zf:
-            kml_data = zf.read('doc.kml')
+            kml_data = zf.read('doc.kml').decode('utf-8')
     else:
-        kml_data = file.read()
+        kml_data = file.read().decode('utf-8')
 
-    kml_obj = simplekml.Kml()
-    kml_obj.from_string(kml_data)
+    root = ET.fromstring(kml_data)
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
     agms = []
-    for placemark in kml_obj.features():
-        if placemark.name and placemark.geometry:
-            coords = placemark.geometry.coords[0]
-            agms.append((placemark.name, coords))
+    for folder in root.findall(".//kml:Folder", ns):
+        name_tag = folder.find("kml:name", ns)
+        if name_tag is not None and name_tag.text == "AGMs":
+            for placemark in folder.findall("kml:Placemark", ns):
+                name = placemark.find("kml:name", ns).text
+                coords = placemark.find(".//kml:coordinates", ns).text.strip()
+                lon, lat, *_ = coords.split(",")
+                agms.append((name, float(lat), float(lon)))
     return agms
 
 def fetch_satellite_image(name, lat, lon, zoom=18):
@@ -43,7 +47,7 @@ if uploaded_file:
     st.success(f"Found {len(agms)} AGMs")
 
     if st.button("Generate Snapshots"):
-        for i, (name, (lon, lat)) in enumerate(agms):
+        for i, (name, lat, lon) in enumerate(agms):
             st.write(f"Capturing {name} ({i+1}/{len(agms)})...")
             fetch_satellite_image(name, lat, lon)
         st.success("✅ All snapshots saved to 'agm_images' folder.")
