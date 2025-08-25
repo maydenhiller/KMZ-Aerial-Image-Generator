@@ -17,7 +17,6 @@ def extract_agms_from_kmz(kmz_file):
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_files = [f for f in z.namelist() if f.endswith('.kml')]
         if not kml_files:
-            st.error("No KML file found inside KMZ.")
             return []
         with z.open(kml_files[0]) as kml:
             tree = ET.parse(kml)
@@ -44,9 +43,28 @@ def fetch_satellite_image(lat, lon, name):
         filename = f"{name.replace(' ', '_')}.jpg"
         img.save(filename)
         return filename
-    else:
-        st.warning(f"Failed to fetch image for {name}. Status code: {response.status_code}")
-        return None
+    return None
 
 # --- STREAMLIT UI ---
-st.title
+st.set_page_config(page_title="AGM Aerial Generator", layout="centered")
+st.title("📸 AGM Aerial Image Generator")
+
+st.markdown("Upload a `.kmz` file containing AGM points. This app will generate a satellite `.jpg` for each AGM.")
+
+uploaded_file = st.file_uploader("Upload KMZ file", type=["kmz"])
+
+if uploaded_file:
+    with st.spinner("Parsing KMZ and extracting AGM coordinates..."):
+        agms = extract_agms_from_kmz(uploaded_file)
+
+    if agms:
+        st.success(f"✅ Found {len(agms)} AGMs.")
+        for name, lat, lon in agms:
+            st.write(f"🛰️ Generating image for **{name}** at ({lat}, {lon})...")
+            img_path = fetch_satellite_image(lat, lon, name)
+            if img_path:
+                st.image(img_path, caption=name, use_column_width=True)
+            else:
+                st.warning(f"Image fetch failed for {name}.")
+    else:
+        st.error("❌ No valid AGM coordinates found in the KMZ.")
