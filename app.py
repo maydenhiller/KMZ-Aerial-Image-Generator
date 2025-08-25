@@ -3,10 +3,11 @@ import zipfile, os, requests
 from fastkml import kml
 import pandas as pd
 
-st.title("AGM Aerial Image Extractor")
+st.set_page_config(page_title="AGM Aerial Image Extractor", layout="wide")
+st.title("📍 AGM Aerial Image Extractor")
 st.markdown("Upload a `.kml` or `.kmz` file containing AGMs and get satellite images for each point.")
 
-API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]  # Store securely in .streamlit/secrets.toml
+API_KEY = "AIzaSyDkUuQfZzvZzRZyJZKZyJZKZyJZKZyJZKZ"  # Your actual Google Maps Static API key
 
 def extract_kml(file):
     if file.name.endswith('.kmz'):
@@ -30,7 +31,7 @@ def parse_agms(kml_string):
 def get_image_url(lat, lon):
     return f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=18&size=600x600&maptype=satellite&key={API_KEY}"
 
-uploaded_file = st.file_uploader("Upload KML/KMZ", type=["kml", "kmz"])
+uploaded_file = st.file_uploader("📁 Upload KML/KMZ", type=["kml", "kmz"])
 if uploaded_file:
     kml_data = extract_kml(uploaded_file)
     agms = parse_agms(kml_data)
@@ -41,9 +42,9 @@ if uploaded_file:
         df["Longitude"] = df["Coordinates"].apply(lambda x: x[0])
         df["Image URL"] = df.apply(lambda row: get_image_url(row["Latitude"], row["Longitude"]), axis=1)
 
-        st.success(f"Found {len(df)} AGMs.")
+        st.success(f"✅ Found {len(df)} AGMs.")
         for _, row in df.iterrows():
             st.subheader(row["AGM Name"])
             st.image(row["Image URL"], caption=f"{row['AGM Name']} @ ({row['Latitude']}, {row['Longitude']})")
 
-        st.download_button("Download AGM CSV", df.drop(columns=["Coordinates"]).to_csv(index=False), "agm_images.csv")
+        st.download_button("📥 Download AGM CSV", df.drop(columns=["Coordinates"]).to_csv(index=False), "agm_images.csv")
