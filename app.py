@@ -1,50 +1,76 @@
 import streamlit as st
-import zipfile, os, requests
-from fastkml import kml
 import pandas as pd
+import zipfile
+import io
+import os
+from fastkml import kml
+from shapely.geometry import Point
+import folium
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from PIL import Image
 
-st.set_page_config(page_title="AGM Aerial Image Extractor", layout="wide")
-st.title("📍 AGM Aerial Image Extractor")
-st.markdown("Upload a `.kml` or `.kmz` file containing AGMs and get satellite images for each point.")
+st.title("📍 AGM Snapshot Generator")
 
-API_KEY = "AIzaSyDkUuQfZzvZzRZyJZKZyJZKZyJZKZyJZKZ"  # Your actual Google Maps Static API key
+uploaded_file = st.file_uploader("Upload KML or KMZ file", type=["kml", "kmz"])
 
-def extract_kml(file):
-    if file.name.endswith('.kmz'):
-        with zipfile.ZipFile(file, 'r') as zip_ref:
-            zip_ref.extractall("temp_kmz")
-        with open("temp_kmz/doc.kml", 'r', encoding='utf-8') as f:
-            return f.read()
-    else:
-        return file.read().decode("utf-8")
+def extract_kml_from_kmz(kmz_bytes):
+    with zipfile.ZipFile(io.BytesIO(kmz_bytes)) as z:
+        for name in z.namelist():
+            if name.endswith(".kml"):
+                return z.read(name)
+    return None
 
-def parse_agms(kml_string):
+def parse_agms(kml_bytes):
     k = kml.KML()
-    k.from_string(kml_string)
-    folders = list(next(k.features()).features())
-    agm_folder = next((f for f in folders if f.name == "AGMs"), None)
-    if not agm_folder:
-        st.error("No folder named 'AGMs' found.")
-        return []
-    return [(p.name, p.geometry.coords[0]) for p in agm_folder.features()]
+    k.from_string(kml_bytes)
+    placemarks = []
+    for doc in k.features():
+        for folder in doc.features():
+            for pm in folder.features():
+                if isinstance(pm.geometry, Point):
+                    lon, lat = pm.geometry.x, pm.geometry.y
+                    placemarks.append({
+                        "AGM Name": pm.name,
+                        "Latitude": lat,
+                        "Longitude": lon
+                    })
+    return pd.DataFrame(placemarks)
 
-def get_image_url(lat, lon):
-    return f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=18&size=600x600&maptype=satellite&key={API_KEY}"
+def render_map(lat, lon, name):
+    m = folium.Map(location=[lat, lon], zoom_start=16)
+    folium.Marker([lat, lon], popup=name).add_to(m)
+    return m
 
-uploaded_file = st.file_uploader("📁 Upload KML/KMZ", type=["kml", "kmz"])
+def save_map_as_image(m, filename):
+    # Save HTML
+    m.save("temp_map.html")
+
+    # Headless browser to capture image
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--window-size=800,600")
+    driver = webdriver.Chrome(options=options)
+    driver.get("file://" + os.path.abspath("temp_map.html"))
+    driver.save_screenshot(filename)
+    driver.quit()
+
 if uploaded_file:
-    kml_data = extract_kml(uploaded_file)
-    agms = parse_agms(kml_data)
+    if uploaded_file.name.endswith(".kmz"):
+        kml_bytes = extract_kml_from_kmz(uploaded_file.read())
+    else:
+        kml_bytes = uploaded_file.read()
 
-    if agms:
-        df = pd.DataFrame(agms, columns=["AGM Name", "Coordinates"])
-        df["Latitude"] = df["Coordinates"].apply(lambda x: x[1])
-        df["Longitude"] = df["Coordinates"].apply(lambda x: x[0])
-        df["Image URL"] = df.apply(lambda row: get_image_url(row["Latitude"], row["Longitude"]), axis=1)
+    df = parse_agms(kml_bytes)
+    st.success(f"Found {len(df)} AGMs")
+    st.dataframe(df)
 
-        st.success(f"✅ Found {len(df)} AGMs.")
+    if st.button("Generate JPGs"):
+        os.makedirs("agm_images", exist_ok=True)
         for _, row in df.iterrows():
-            st.subheader(row["AGM Name"])
-            st.image(row["Image URL"], caption=f"{row['AGM Name']} @ ({row['Latitude']}, {row['Longitude']})")
-
-        st.download_button("📥 Download AGM CSV", df.drop(columns=["Coordinates"]).to_csv(index=False), "agm_images.csv")
+            name = row["AGM Name"].replace(" ", "_")
+            lat, lon = row["Latitude"], row["Longitude"]
+            m = render_map(lat, lon, name)
+            filename = f"agm_images/{name}.jpg"
+            save_map_as_image(m, filename)
+        st.success("Images saved to agm_images folder")
