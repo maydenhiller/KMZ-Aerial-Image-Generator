@@ -1,14 +1,14 @@
 import streamlit as st
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
-import requests
+import folium
+from folium.plugins import MarkerCluster
 import os
 
-st.set_page_config(page_title="AGM Snapshot Generator", layout="centered")
-st.title("📸 AGM Satellite Snapshot Generator")
+st.set_page_config(page_title="AGM Map Generator", layout="centered")
+st.title("🗺️ AGM Map Snapshot Generator")
 
-GOOGLE_MAPS_API_KEY = st.secrets["AIzaSyB9HxznAvlGb02e-K1rhld_CPeAm_wvPWU"]
-output_dir = "agm_images"
+output_dir = "agm_maps"
 os.makedirs(output_dir, exist_ok=True)
 
 def extract_agms(file):
@@ -32,12 +32,12 @@ def extract_agms(file):
                 agms.append((name, float(lat), float(lon)))
     return agms
 
-def fetch_satellite_image(name, lat, lon, zoom=18):
-    url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom={zoom}&size=800x800&maptype=satellite&key={GOOGLE_MAPS_API_KEY}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        with open(os.path.join(output_dir, f"{name}.jpg"), "wb") as f:
-            f.write(response.content)
+def create_map(name, lat, lon):
+    m = folium.Map(location=[lat, lon], zoom_start=18, tiles="Stamen Terrain")
+    folium.Marker([lat, lon], popup=name).add_to(m)
+    map_path = os.path.join(output_dir, f"{name}.html")
+    m.save(map_path)
+    return map_path
 
 uploaded_file = st.file_uploader("Upload KMZ or KML file", type=["kmz", "kml"])
 
@@ -46,8 +46,9 @@ if uploaded_file:
     agms = extract_agms(uploaded_file)
     st.success(f"Found {len(agms)} AGMs")
 
-    if st.button("Generate Snapshots"):
+    if st.button("Generate Maps"):
         for i, (name, lat, lon) in enumerate(agms):
-            st.write(f"Capturing {name} ({i+1}/{len(agms)})...")
-            fetch_satellite_image(name, lat, lon)
-        st.success("✅ All snapshots saved to 'agm_images' folder.")
+            st.write(f"Rendering {name} ({i+1}/{len(agms)})...")
+            map_path = create_map(name, lat, lon)
+            st.markdown(f"[View {name} Map]({map_path})")
+        st.success("✅ All maps saved as HTML in 'agm_maps' folder.")
