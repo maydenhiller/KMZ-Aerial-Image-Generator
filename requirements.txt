@@ -1,3 +1,1 @@
-streamlit
-requests
-pillow
+pip install streamlit fastkml simplekml pandas requests
