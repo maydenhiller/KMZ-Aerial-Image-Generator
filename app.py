@@ -38,10 +38,15 @@ def fetch_satellite_image(lat, lon, name):
     )
     response = requests.get(url)
     if response.status_code == 200:
-        img = Image.open(BytesIO(response.content))
-        filename = f"{name.replace(' ', '_')}.jpg"
-        img.save(filename)
-        return filename
+        try:
+            img = Image.open(BytesIO(response.content)).convert("RGB")
+            safe_name = "".join(c if c.isalnum() else "_" for c in name)
+            filename = f"{safe_name}.jpg"
+            img.save(filename)
+            return filename
+        except Exception as e:
+            st.error(f"❌ Failed to process image for {name}: {e}")
+            return None
     else:
         st.warning(f"Image fetch failed for {name}. Status code: {response.status_code}")
         st.text(f"URL: {url}")
