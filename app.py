@@ -7,7 +7,7 @@ import os
 st.set_page_config(page_title="AGM Snapshot Generator", layout="centered")
 st.title("📸 AGM Satellite Snapshot Generator")
 
-GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
+GOOGLE_MAPS_API_KEY = st.secrets["AIzaSyB9HxznAvlGb02e-K1rhld_CPeAm_wvPWU"]
 output_dir = "agm_images"
 os.makedirs(output_dir, exist_ok=True)
 
