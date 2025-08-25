@@ -1,75 +1,49 @@
 import streamlit as st
-import zipfile
-import xml.etree.ElementTree as ET
-import requests
-from PIL import Image
-from io import BytesIO
+import zipfile, os, requests
+from fastkml import kml
+import pandas as pd
 
-# --- CONFIG ---
-API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
-ZOOM = 18
-IMG_SIZE = "800x800"
-MAPTYPE = "satellite"
+st.title("AGM Aerial Image Extractor")
+st.markdown("Upload a `.kml` or `.kmz` file containing AGMs and get satellite images for each point.")
 
-# --- FUNCTIONS ---
-def extract_agms_from_kmz(kmz_file):
-    with zipfile.ZipFile(kmz_file, 'r') as z:
-        kml_files = [f for f in z.namelist() if f.endswith('.kml')]
-        if not kml_files:
-            return []
-        with z.open(kml_files[0]) as kml:
-            tree = ET.parse(kml)
-            root = tree.getroot()
-            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-            placemarks = root.findall(".//kml:Placemark", ns)
-            agms = []
-            for pm in placemarks:
-                name = pm.find("kml:name", ns)
-                coord = pm.find(".//kml:coordinates", ns)
-                if name is not None and coord is not None:
-                    lon, lat, *_ = coord.text.strip().split(",")
-                    agms.append((name.text.strip(), float(lat), float(lon)))
-            return agms
+API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]  # Store securely in .streamlit/secrets.toml
 
-def fetch_satellite_image(lat, lon, name):
-    url = (
-        f"https://maps.googleapis.com/maps/api/staticmap?"
-        f"center={lat},{lon}&zoom={ZOOM}&size={IMG_SIZE}&maptype={MAPTYPE}&key={API_KEY}"
-    )
-    response = requests.get(url)
-    if response.status_code == 200:
-        try:
-            img = Image.open(BytesIO(response.content)).convert("RGB")
-            safe_name = "".join(c if c.isalnum() else "_" for c in name)
-            filename = f"{safe_name}.jpg"
-            img.save(filename)
-            return filename
-        except Exception as e:
-            st.error(f"❌ Failed to process image for {name}: {e}")
-            return None
+def extract_kml(file):
+    if file.name.endswith('.kmz'):
+        with zipfile.ZipFile(file, 'r') as zip_ref:
+            zip_ref.extractall("temp_kmz")
+        with open("temp_kmz/doc.kml", 'r', encoding='utf-8') as f:
+            return f.read()
     else:
-        st.warning(f"Image fetch failed for {name}. Status code: {response.status_code}")
-        st.text(f"URL: {url}")
-        return None
+        return file.read().decode("utf-8")
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title="AGM Aerial Generator", layout="centered")
-st.title("📸 AGM Aerial Image Generator")
+def parse_agms(kml_string):
+    k = kml.KML()
+    k.from_string(kml_string)
+    folders = list(next(k.features()).features())
+    agm_folder = next((f for f in folders if f.name == "AGMs"), None)
+    if not agm_folder:
+        st.error("No folder named 'AGMs' found.")
+        return []
+    return [(p.name, p.geometry.coords[0]) for p in agm_folder.features()]
 
-st.markdown("Upload a `.kmz` file containing AGM points. This app will generate a satellite `.jpg` for each AGM.")
+def get_image_url(lat, lon):
+    return f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=18&size=600x600&maptype=satellite&key={API_KEY}"
 
-uploaded_file = st.file_uploader("Upload KMZ file", type=["kmz"])
-
+uploaded_file = st.file_uploader("Upload KML/KMZ", type=["kml", "kmz"])
 if uploaded_file:
-    with st.spinner("Parsing KMZ and extracting AGM coordinates..."):
-        agms = extract_agms_from_kmz(uploaded_file)
+    kml_data = extract_kml(uploaded_file)
+    agms = parse_agms(kml_data)
 
     if agms:
-        st.success(f"✅ Found {len(agms)} AGMs.")
-        for name, lat, lon in agms:
-            st.write(f"🛰️ Generating image for **{name}** at ({lat}, {lon})...")
-            img_path = fetch_satellite_image(lat, lon, name)
-            if img_path:
-                st.image(img_path, caption=name, use_column_width=True)
-    else:
-        st.error("❌ No valid AGM coordinates found in the KMZ.")
+        df = pd.DataFrame(agms, columns=["AGM Name", "Coordinates"])
+        df["Latitude"] = df["Coordinates"].apply(lambda x: x[1])
+        df["Longitude"] = df["Coordinates"].apply(lambda x: x[0])
+        df["Image URL"] = df.apply(lambda row: get_image_url(row["Latitude"], row["Longitude"]), axis=1)
+
+        st.success(f"Found {len(df)} AGMs.")
+        for _, row in df.iterrows():
+            st.subheader(row["AGM Name"])
+            st.image(row["Image URL"], caption=f"{row['AGM Name']} @ ({row['Latitude']}, {row['Longitude']})")
+
+        st.download_button("Download AGM CSV", df.drop(columns=["Coordinates"]).to_csv(index=False), "agm_images.csv")
