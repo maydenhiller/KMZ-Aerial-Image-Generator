@@ -59,6 +59,21 @@ def fetch_satellite_image(lat, lon, name):
 
     label = name.replace("_", " ")
 
+    # AGM coordinate is at center of image
+    center_x = image.width // 2
+    center_y = image.height // 2
+
+    # Draw yellow dot at AGM location
+    dot_radius = 6
+    draw.ellipse(
+        [
+            (center_x - dot_radius, center_y - dot_radius),
+            (center_x + dot_radius, center_y + dot_radius)
+        ],
+        fill="yellow",
+        outline="black"
+    )
+
     # Measure text size
     try:
         bbox = font.getbbox(label)
@@ -67,27 +82,27 @@ def fetch_satellite_image(lat, lon, name):
     except AttributeError:
         text_width, text_height = draw.textlength(label, font=font), font_size
 
-    x = (image.width - text_width) // 2
-    y = image.height - text_height - 10
+    # Offset label slightly above and to the right of the dot
+    label_x = center_x + dot_radius + 4
+    label_y = center_y - text_height - 4
 
-    # Draw semi-transparent background
-    box_margin = 6
+    # Draw semi-transparent background behind text
+    box_margin = 4
     box_coords = [
-        x - box_margin,
-        y - box_margin,
-        x + text_width + box_margin,
-        y + text_height + box_margin
+        label_x - box_margin,
+        label_y - box_margin,
+        label_x + text_width + box_margin,
+        label_y + text_height + box_margin
     ]
     draw.rectangle(box_coords, fill=(0, 0, 0, 180))
 
-    # Draw text
-    draw.text((x, y), label, fill="white", font=font)
+    # Draw label
+    draw.text((label_x, label_y), label, fill="white", font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
     buffer.seek(0)
     return buffer.read()
-
 
 # --- Main logic ---
 if uploaded_file:
