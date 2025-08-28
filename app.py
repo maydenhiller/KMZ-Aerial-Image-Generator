@@ -59,7 +59,7 @@ def fetch_satellite_image(lat, lon, name):
 
     label = name.replace("_", " ")
 
-    # Use getbbox for text size
+    # Measure text size
     try:
         bbox = font.getbbox(label)
         text_width = bbox[2] - bbox[0]
@@ -70,12 +70,24 @@ def fetch_satellite_image(lat, lon, name):
     x = (image.width - text_width) // 2
     y = image.height - text_height - 10
 
+    # Draw semi-transparent background
+    box_margin = 6
+    box_coords = [
+        x - box_margin,
+        y - box_margin,
+        x + text_width + box_margin,
+        y + text_height + box_margin
+    ]
+    draw.rectangle(box_coords, fill=(0, 0, 0, 180))
+
+    # Draw text
     draw.text((x, y), label, fill="white", font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
     buffer.seek(0)
     return buffer.read()
+
 
 # --- Main logic ---
 if uploaded_file:
