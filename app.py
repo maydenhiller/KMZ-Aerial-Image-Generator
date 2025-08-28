@@ -2,16 +2,18 @@ import streamlit as st
 import pandas as pd
 import zipfile
 import io
+import requests
 from fastkml import kml
 from shapely.geometry import Point
-from staticmap import StaticMap, CircleMarker
-from PIL import Image
 
-st.title("📍 AGM Snapshot Generator (Streamlit Cloud)")
+# 🔑 Your Google Maps Static API Key
+API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
+
+st.title("📍 AGM Satellite Snapshot Generator")
 
 uploaded_file = st.file_uploader("Upload KML or KMZ file", type=["kml", "kmz"])
 
-def extract_kml(kmz_bytes):
+def extract_kml_from_kmz(kmz_bytes):
     with zipfile.ZipFile(io.BytesIO(kmz_bytes)) as z:
         for name in z.namelist():
             if name.endswith(".kml"):
@@ -21,40 +23,58 @@ def extract_kml(kmz_bytes):
 def parse_agms(kml_bytes):
     k = kml.KML()
     k.from_string(kml_bytes)
-    placemarks = []
+    agms = []
     for doc in k.features():
         for folder in doc.features():
-            for pm in folder.features():
-                if isinstance(pm.geometry, Point):
-                    lon, lat = pm.geometry.x, pm.geometry.y
-                    placemarks.append({
-                        "AGM Name": pm.name,
-                        "Latitude": lat,
-                        "Longitude": lon
-                    })
-    return pd.DataFrame(placemarks)
+            if folder.name.lower() == "agms":
+                for pm in folder.features():
+                    if isinstance(pm.geometry, Point):
+                        lon, lat = pm.geometry.x, pm.geometry.y
+                        agms.append({
+                            "AGM Name": pm.name,
+                            "Latitude": lat,
+                            "Longitude": lon
+                        })
+    return pd.DataFrame(agms)
 
-def generate_image(lat, lon, name):
-    m = StaticMap(600, 400)
-    marker = CircleMarker((lon, lat), 'red', 12)
-    m.add_marker(marker)
-    image = m.render()
-    buffer = io.BytesIO()
-    image.save(buffer, format='JPEG')
-    buffer.seek(0)
-    return buffer
+def fetch_satellite_image(lat, lon, name):
+    url = (
+        f"https://maps.googleapis.com/maps/api/staticmap?"
+        f"center={lat},{lon}&zoom=18&size=640x640&maptype=satellite&key={API_KEY}"
+    )
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.content
+    else:
+        return None
 
 if uploaded_file:
     if uploaded_file.name.endswith(".kmz"):
-        kml_bytes = extract_kml(uploaded_file.read())
+        kml_bytes = extract_kml_from_kmz(uploaded_file.read())
     else:
         kml_bytes = uploaded_file.read()
 
     df = parse_agms(kml_bytes)
-    st.success(f"Found {len(df)} AGMs")
-    st.dataframe(df)
 
-    if st.button("Generate JPG Snapshots"):
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-            for _, row in df.iter
+    if df.empty:
+        st.error("No AGMs found in the 'AGMs' folder of your KML/KMZ.")
+    else:
+        st.success(f"Found {len(df)} AGMs")
+        st.dataframe(df)
+
+        if st.button("Generate Satellite Images"):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                for _, row in df.iterrows():
+                    name = row["AGM Name"].replace(" ", "_")
+                    lat, lon = row["Latitude"], row["Longitude"]
+                    image_data = fetch_satellite_image(lat, lon, name)
+                    if image_data:
+                        zip_file.writestr(f"{name}.jpg", image_data)
+            zip_buffer.seek(0)
+            st.download_button(
+                label="📦 Download AGM Satellite ZIP",
+                data=zip_buffer,
+                file_name="agm_satellite_images.zip",
+                mime="application/zip"
+            )
