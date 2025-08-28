@@ -11,8 +11,9 @@ API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
 
 st.title("📍 AGM Satellite Snapshot Generator")
 
-uploaded_file = st.file_uploader("Upload KML or KMZ file", type=["kml", "kmz"])
+uploaded_file = st.file_uploader("Upload KMZ or KML file", type=["kmz", "kml"])
 
+# --- Extract KML from KMZ ---
 def extract_kml_from_kmz(kmz_bytes):
     with zipfile.ZipFile(io.BytesIO(kmz_bytes)) as z:
         for name in z.namelist():
@@ -20,23 +21,24 @@ def extract_kml_from_kmz(kmz_bytes):
                 return z.read(name)
     return None
 
+# --- Recursively parse all placemarks with Point geometry ---
 def parse_agms(kml_bytes):
+    def extract_points(features):
+        agms = []
+        for f in features:
+            if hasattr(f, 'features'):
+                agms.extend(extract_points(f.features()))
+            elif isinstance(f.geometry, Point):
+                lon, lat = f.geometry.x, f.geometry.y
+                name = f.name.strip().replace(" ", "_") if f.name else "Unnamed"
+                agms.append({"AGM Name": name, "Latitude": lat, "Longitude": lon})
+        return agms
+
     k = kml.KML()
     k.from_string(kml_bytes)
-    agms = []
-    for doc in k.features():
-        for folder in doc.features():
-            if folder.name.lower() == "agms":
-                for pm in folder.features():
-                    if isinstance(pm.geometry, Point):
-                        lon, lat = pm.geometry.x, pm.geometry.y
-                        agms.append({
-                            "AGM Name": pm.name,
-                            "Latitude": lat,
-                            "Longitude": lon
-                        })
-    return pd.DataFrame(agms)
+    return pd.DataFrame(extract_points(list(k.features())))
 
+# --- Fetch satellite image from Google Maps Static API ---
 def fetch_satellite_image(lat, lon, name):
     url = (
         f"https://maps.googleapis.com/maps/api/staticmap?"
@@ -48,6 +50,7 @@ def fetch_satellite_image(lat, lon, name):
     else:
         return None
 
+# --- Main logic ---
 if uploaded_file:
     if uploaded_file.name.endswith(".kmz"):
         kml_bytes = extract_kml_from_kmz(uploaded_file.read())
@@ -57,7 +60,7 @@ if uploaded_file:
     df = parse_agms(kml_bytes)
 
     if df.empty:
-        st.error("No AGMs found in the 'AGMs' folder of your KML/KMZ.")
+        st.error("No valid AGM placemarks with coordinates found.")
     else:
         st.success(f"Found {len(df)} AGMs")
         st.dataframe(df)
@@ -66,7 +69,7 @@ if uploaded_file:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zip_file:
                 for _, row in df.iterrows():
-                    name = row["AGM Name"].replace(" ", "_")
+                    name = row["AGM Name"]
                     lat, lon = row["Latitude"], row["Longitude"]
                     image_data = fetch_satellite_image(lat, lon, name)
                     if image_data:
