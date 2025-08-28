@@ -3,8 +3,7 @@ import pandas as pd
 import zipfile
 import io
 import requests
-from fastkml import kml
-from shapely.geometry import Point
+import xml.etree.ElementTree as ET
 
 API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
 
@@ -19,24 +18,21 @@ def extract_kml_from_kmz(kmz_bytes):
                 return z.read(name)
     return None
 
-def extract_all_placemarks(element):
+def parse_kml(kml_bytes):
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
+    root = ET.fromstring(kml_bytes)
     placemarks = []
-    if hasattr(element, 'features'):
-        for f in element.features():
-            placemarks.extend(extract_all_placemarks(f))
-    elif isinstance(element.geometry, Point):
-        lon, lat = element.geometry.x, element.geometry.y
-        name = element.name.strip().replace(" ", "_") if element.name else "Unnamed"
-        placemarks.append({"AGM Name": name, "Latitude": lat, "Longitude": lon})
-    return placemarks
-
-def parse_agms(kml_bytes):
-    k = kml.KML()
-    k.from_string(kml_bytes)
-    all_features = []
-    for feature in k.features():
-        all_features.extend(extract_all_placemarks(feature))
-    return pd.DataFrame(all_features)
+    for pm in root.findall(".//kml:Placemark", ns):
+        name_el = pm.find("kml:name", ns)
+        coord_el = pm.find(".//kml:Point/kml:coordinates", ns)
+        if name_el is not None and coord_el is not None:
+            name = name_el.text.strip().replace(" ", "_")
+            coords = coord_el.text.strip().split(",")
+            if len(coords) >= 2:
+                lon = float(coords[0])
+                lat = float(coords[1])
+                placemarks.append({"AGM Name": name, "Latitude": lat, "Longitude": lon})
+    return pd.DataFrame(placemarks)
 
 def fetch_satellite_image(lat, lon, name):
     url = (
@@ -54,7 +50,7 @@ if uploaded_file:
     else:
         kml_bytes = uploaded_file.read()
 
-    df = parse_agms(kml_bytes)
+    df = parse_kml(kml_bytes)
 
     if df.empty:
         st.error("No valid placemarks with coordinates found.")
