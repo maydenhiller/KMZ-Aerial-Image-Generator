@@ -26,17 +26,27 @@ def parse_kml(kml_bytes):
     ns = {"kml": "http://www.opengis.net/kml/2.2"}
     root = ET.fromstring(kml_bytes)
     placemarks = []
-    for pm in root.findall(".//kml:Placemark", ns):
-        name_el = pm.find("kml:name", ns)
-        coord_el = pm.find(".//kml:Point/kml:coordinates", ns)
-        if name_el is not None and coord_el is not None:
-            name = name_el.text.strip().replace(" ", "_")
-            coords = coord_el.text.strip().split(",")
-            if len(coords) >= 2:
-                lon = float(coords[0])
-                lat = float(coords[1])
-                placemarks.append({"AGM Name": name, "Latitude": lat, "Longitude": lon})
+
+    # Find all folders named "AGMs"
+    for folder in root.findall(".//kml:Folder", ns):
+        name_el = folder.find("kml:name", ns)
+        if name_el is not None and name_el.text.strip().lower() == "agms":
+            for pm in folder.findall("kml:Placemark", ns):
+                name_el = pm.find("kml:name", ns)
+                coord_el = pm.find(".//kml:Point/kml:coordinates", ns)
+                if name_el is not None and coord_el is not None:
+                    name = name_el.text.strip().replace(" ", "_")
+                    coords = coord_el.text.strip().split(",")
+                    if len(coords) >= 2:
+                        lon = float(coords[0])
+                        lat = float(coords[1])
+                        placemarks.append({
+                            "AGM Name": name,
+                            "Latitude": lat,
+                            "Longitude": lon
+                        })
     return pd.DataFrame(placemarks)
+
 
 # --- Fetch and annotate satellite image ---
 def fetch_satellite_image(lat, lon, name):
