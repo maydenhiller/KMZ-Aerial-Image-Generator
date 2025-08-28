@@ -21,13 +21,12 @@ def extract_kml_from_kmz(kmz_bytes):
                 return z.read(name)
     return None
 
-# --- Parse KML using XML ---
+# --- Parse only placemarks inside "AGMs" folder ---
 def parse_kml(kml_bytes):
     ns = {"kml": "http://www.opengis.net/kml/2.2"}
     root = ET.fromstring(kml_bytes)
     placemarks = []
 
-    # Find all folders named "AGMs"
     for folder in root.findall(".//kml:Folder", ns):
         name_el = folder.find("kml:name", ns)
         if name_el is not None and name_el.text.strip().lower() == "agms":
@@ -35,7 +34,7 @@ def parse_kml(kml_bytes):
                 name_el = pm.find("kml:name", ns)
                 coord_el = pm.find(".//kml:Point/kml:coordinates", ns)
                 if name_el is not None and coord_el is not None:
-                    name = name_el.text.strip().replace(" ", "_")
+                    name = name_el.text.strip()
                     coords = coord_el.text.strip().split(",")
                     if len(coords) >= 2:
                         lon = float(coords[0])
@@ -46,7 +45,6 @@ def parse_kml(kml_bytes):
                             "Longitude": lon
                         })
     return pd.DataFrame(placemarks)
-
 
 # --- Fetch and annotate satellite image ---
 def fetch_satellite_image(lat, lon, name):
@@ -67,7 +65,7 @@ def fetch_satellite_image(lat, lon, name):
     except:
         font = ImageFont.load_default()
 
-    label = name.replace("_", " ")
+    label = name
 
     # AGM coordinate is at center of image
     center_x = image.width // 2
@@ -124,9 +122,9 @@ if uploaded_file:
     df = parse_kml(kml_bytes)
 
     if df.empty:
-        st.error("No valid placemarks with coordinates found.")
+        st.error("No valid AGM placemarks found in the 'AGMs' folder.")
     else:
-        st.success(f"Found {len(df)} placemarks")
+        st.success(f"Found {len(df)} AGMs")
         st.dataframe(df)
 
         if st.button("Generate Satellite Images"):
