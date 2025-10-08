@@ -59,13 +59,15 @@ def fetch_satellite_image(lat, lon, name):
     image = Image.open(io.BytesIO(response.content)).convert("RGB")
     draw = ImageDraw.Draw(image)
 
-    font_size = 24
+    # Larger font size
+    font_size = 32
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
     except:
         font = ImageFont.load_default()
 
-    label = name
+    # Force uppercase
+    label = name.upper()
 
     # AGM coordinate is at center of image
     center_x = image.width // 2
@@ -91,21 +93,21 @@ def fetch_satellite_image(lat, lon, name):
         text_width, text_height = draw.textlength(label, font=font), font_size
 
     # Offset label slightly above and to the right of the dot
-    label_x = center_x + dot_radius + 4
-    label_y = center_y - text_height - 4
+    label_x = center_x + dot_radius + 6
+    label_y = center_y - text_height - 6
 
-    # Draw semi-transparent background behind text
-    box_margin = 4
+    # White background behind text
+    box_margin = 6
     box_coords = [
         label_x - box_margin,
         label_y - box_margin,
         label_x + text_width + box_margin,
         label_y + text_height + box_margin
     ]
-    draw.rectangle(box_coords, fill=(0, 0, 0, 180))
+    draw.rectangle(box_coords, fill="white", outline="black")  # white box with black border
 
-    # Draw label
-    draw.text((label_x, label_y), label, fill="white", font=font)
+    # Draw label in black text
+    draw.text((label_x, label_y), label, fill="black", font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
