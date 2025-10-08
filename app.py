@@ -6,10 +6,10 @@ import requests
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw, ImageFont
 
-# 🔑 Your Google Maps Static API Key
-API_KEY = "AIzaSyCd7sfheaJIbB8_J9Q9cxWb5jnv4U0K0LA"
-
 st.title("📍 AGM Satellite Snapshot Generator")
+
+# --- Load Mapbox token from Streamlit secrets ---
+MAPBOX_TOKEN = st.secrets["mapbox"]["token"]
 
 uploaded_file = st.file_uploader("Upload KMZ or KML file", type=["kmz", "kml"])
 
@@ -46,11 +46,11 @@ def parse_kml(kml_bytes):
                         })
     return pd.DataFrame(placemarks)
 
-# --- Fetch and annotate satellite image ---
+# --- Fetch and annotate satellite image from Mapbox ---
 def fetch_satellite_image(lat, lon, name):
     url = (
-        f"https://maps.googleapis.com/maps/api/staticmap?"
-        f"center={lat},{lon}&zoom=18&size=640x640&maptype=satellite&key={API_KEY}"
+        f"https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/"
+        f"{lon},{lat},18,0/640x640?access_token={MAPBOX_TOKEN}"
     )
     response = requests.get(url)
     if response.status_code != 200:
@@ -143,3 +143,6 @@ if uploaded_file:
                 file_name="agm_satellite_images.zip",
                 mime="application/zip"
             )
+
+# --- Attribution footer (required by Mapbox/OSM) ---
+st.caption("© Mapbox © OpenStreetMap contributors")
