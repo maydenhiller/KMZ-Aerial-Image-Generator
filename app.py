@@ -78,7 +78,6 @@ def _load_font(size_px: int) -> ImageFont.ImageFont:
 def fetch_satellite_image_exact_size(lat: float, lon: float, name: str, mapbox_token: str) -> bytes | None:
     fetch_w = min(int(OUTPUT_WIDTH_PX * FETCH_SCALE), MAPBOX_MAX_DIM_PX)
     fetch_h = min(int(OUTPUT_HEIGHT_PX * FETCH_SCALE), MAPBOX_MAX_DIM_PX)
-    scale = fetch_w / OUTPUT_WIDTH_PX
 
     url = (
         "https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/"
@@ -91,16 +90,23 @@ def fetch_satellite_image_exact_size(lat: float, lon: float, name: str, mapbox_t
         return None
 
     image = Image.open(io.BytesIO(response.content)).convert("RGB")
-    draw = ImageDraw.Draw(image)
 
-    label = (name or "").upper()
-    font_size = max(10, int(14 * scale))
+    # Downscale imagery to exact template size (Picture 5) FIRST, then draw text
+    # at the final size so the label stays crisp and readable.
+    resample = _get_resample_lanczos()
+    image = image.resize((OUTPUT_WIDTH_PX, OUTPUT_HEIGHT_PX), resample=resample)
+
+    draw = ImageDraw.Draw(image)
+    label = (name or "").upper().strip()
+
+    # Plain + readable label styling for small outputs.
+    font_size = 18
     font = _load_font(font_size)
 
     center_x = image.width // 2
     center_y = image.height // 2
 
-    dot_radius = max(2, int(3 * scale))
+    dot_radius = 4
     draw.ellipse(
         [
             (center_x - dot_radius, center_y - dot_radius),
@@ -108,34 +114,48 @@ def fetch_satellite_image_exact_size(lat: float, lon: float, name: str, mapbox_t
         ],
         fill="yellow",
         outline="black",
-        width=max(1, int(1 * scale)),
+        width=1,
     )
 
-    try:
-        bbox = font.getbbox(label)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-    except Exception:
-        text_w = int(draw.textlength(label, font=font))
-        text_h = font_size
+    if label:
+        try:
+            bbox = font.getbbox(label)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+        except Exception:
+            text_w = int(draw.textlength(label, font=font))
+            text_h = font_size
 
-    margin = max(2, int(3 * scale))
-    offset = max(2, int(3 * scale))
-    label_x = center_x + dot_radius + offset
-    label_y = center_y - text_h - offset
+        margin = 4
+        offset = 6
 
-    box = [
-        label_x - margin,
-        label_y - margin,
-        label_x + text_w + margin,
-        label_y + text_h + margin,
-    ]
-    draw.rectangle(box, fill="white", outline="black", width=max(1, int(1 * scale)))
-    draw.text((label_x, label_y), label, fill="black", font=font)
+        # Prefer placing the label to the right of the dot; clamp on-canvas.
+        label_x = center_x + dot_radius + offset
+        label_y = center_y - (text_h // 2)
 
-    # Downscale to exact template size (Picture 5) for output.
-    resample = _get_resample_lanczos()
-    image = image.resize((OUTPUT_WIDTH_PX, OUTPUT_HEIGHT_PX), resample=resample)
+        label_x = max(margin, min(label_x, image.width - text_w - margin))
+        label_y = max(margin, min(label_y, image.height - text_h - margin))
+
+        box = [
+            label_x - margin,
+            label_y - margin,
+            label_x + text_w + margin,
+            label_y + text_h + margin,
+        ]
+        draw.rectangle(box, fill="white", outline="black", width=1)
+
+        # When supported by Pillow, add a subtle stroke to increase legibility.
+        try:
+            draw.text(
+                (label_x, label_y),
+                label,
+                fill="black",
+                font=font,
+                stroke_width=1,
+                stroke_fill="black",
+            )
+        except TypeError:
+            draw.text((label_x, label_y), label, fill="black", font=font)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=95, optimize=True)
